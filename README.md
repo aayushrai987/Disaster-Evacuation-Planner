@@ -8,7 +8,6 @@ A full‑stack **disaster evacuation routing system** that computes safe, optimi
 ✅ **Multi-stop route optimization**
 ✅ **Offline mode (PWA)**
 
-> ⚠️ All development (frontend, backend, architecture, routing engine integration, DB, optimizations, deployment) was done by **Arnav Nigam**.
 
 ---
 
