@@ -167,7 +167,7 @@ Tested with OSM tiles for **Central India** (Bhopal → Jabalpur, 280 km).
 
 * **[Arnav Nigam]**
 * GitHub: `[https://github.com/arnavnigam168]`
-* **[Aayush rai]**
+* **[Aayush Rai]**
 * GitHub: `[https://github.com/aayushrai987]`
 
 ## License
