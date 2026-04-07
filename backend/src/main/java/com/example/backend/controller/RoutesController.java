@@ -204,14 +204,17 @@ public class RoutesController {
             if (!avoidanceCoords.isEmpty() && avoidanceCoords.get(0).size() >= 3) {
                 System.out.println("=== AVOIDANCE POLYGON: Using block_area & alternatives ===");
 
-                // Build block_area polygon string in format: lat,lon:lat,lon:...
-                StringBuilder blockArea = new StringBuilder();
+                // GraphHopper GET API block_area supports bounding boxes: minLat,minLon,maxLat,maxLon
+                double minLat = Double.MAX_VALUE, minLon = Double.MAX_VALUE;
+                double maxLat = -Double.MAX_VALUE, maxLon = -Double.MAX_VALUE;
                 List<double[]> poly = avoidanceCoords.get(0);
-                for (int i = 0; i < poly.size(); i++) {
-                    double[] p = poly.get(i);
-                    if (i > 0) blockArea.append(",");
-                    blockArea.append(p[1]).append(",").append(p[0]);
+                for (double[] p : poly) {
+                    minLon = Math.min(minLon, p[0]);
+                    maxLon = Math.max(maxLon, p[0]);
+                    minLat = Math.min(minLat, p[1]);
+                    maxLat = Math.max(maxLat, p[1]);
                 }
+                String blockArea = minLat + "," + minLon + "," + maxLat + "," + maxLon;
                 StringBuilder ghParams = new StringBuilder();
                 ghParams.append("point=").append(startCoords[1]).append(",").append(startCoords[0]);
                 if (viaPoints != null) {
@@ -224,7 +227,7 @@ public class RoutesController {
                 ghParams.append("&vehicle=car&calc_points=true&geometries=geojson&points_encoded=false");
                 ghParams.append("&alternatives=3&instructions=true");
                 ghParams.append("&details=road_class&details=surface&details=road_access&elevation=true");
-                ghParams.append("&block_area=").append(java.net.URLEncoder.encode(blockArea.toString(), java.nio.charset.StandardCharsets.UTF_8));
+                ghParams.append("&block_area=").append(java.net.URLEncoder.encode(blockArea, java.nio.charset.StandardCharsets.UTF_8));
 
                 ghUrl = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams.toString();
                 System.out.println("Fetching route with block_area: " + ghUrl);
