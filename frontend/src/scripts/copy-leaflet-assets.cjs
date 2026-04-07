@@ -11,3 +11,4 @@ fs.copySync(sourceDir, destDir, { overwrite: true }, (err) => {
 
 fs.copySync('node_modules/leaflet/dist/leaflet.css', 'public/leaflet/dist/leaflet.css');
 fs.copySync('node_modules/leaflet-draw/dist/leaflet.draw.css', 'public/leaflet-draw/dist/leaflet.draw.css');
+fs.copySync('node_modules/leaflet-draw/dist/images', 'public/leaflet-draw/dist/images');

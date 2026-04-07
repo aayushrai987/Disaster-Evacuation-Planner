@@ -1,373 +1,405 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { X, Moon, Sun, Search, Clock, MapPin, CloudRain, ThermometerSun } from 'lucide-react';
+import React, { useState, useEffect, useCallback, Component } from 'react';
+import axios from 'axios';
+import { 
+  Navigation, Shield, Cloud, Menu, X, 
+  ChevronRight, Map as MapIcon, Info, MapPin, 
+  ArrowRight, ThermometerSun, Wind
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import MapComponent from './components/MapComponent';
+import SafetyDashboard from './components/SafetyDashboard';
 import TurnByTurn from './components/TurnByTurn';
 import AlternativesList from './components/AlternativesList';
-import axios from 'axios';
-import DisasterSelector from './components/DisasterSelector';
-import SafetyDashboard from './components/SafetyDashboard';
+import SearchInput from './components/SearchInput';
 
-function App() {
+// ── Safe number helpers ──────────────────────────────────────
+const safeFix = (val, decimals = 1) => {
+  const n = parseFloat(val);
+  return isNaN(n) ? '—' : n.toFixed(decimals);
+};
+
+// ── Error Boundary ───────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  componentDidCatch(err, info) { console.error('React crash:', err, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '1rem', color: '#ef4444', fontSize: '0.8rem', background: '#1e293b', borderRadius: 8, margin: '0.5rem' }}>
+          <strong>Display error:</strong> {this.state.error.message}
+          <button
+            onClick={() => this.setState({ error: null })}
+            style={{ display: 'block', marginTop: 8, padding: '4px 10px', background: '#334155', border: 'none', color: '#fff', borderRadius: 4, cursor: 'pointer' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── Main App ─────────────────────────────────────────────────
+export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [startLocation, setStartLocation] = useState('');
-  const [endLocation, setEndLocation] = useState('');
-  const [theme, setTheme] = useState('dark');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [routeData, setRouteData] = useState(null);
-  const [weather, setWeather] = useState(null);
-  const [polygonCoords, setPolygonCoords] = useState([]); // Track poly for avoidance
-  const [disasterType, setDisasterType] = useState('general'); // flood|fire|ocean|industrial|general
-  const [showSteps, setShowSteps] = useState(true);
-  const [showAlternatives, setShowAlternatives] = useState(true);
-  const [showTraffic, setShowTraffic] = useState(false);
-const [stops, setStops] = useState([]);
-const [altIndex, setAltIndex] = useState(null);
-const [alternatives, setAlternatives] = useState([]);
-const [showWeather, setShowWeather] = useState(false);
-
-
-  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
-
-  const geocodeLocation = async (location) => {
-    try {
-      const response = await axios.get(`http://localhost:8080/api/geocode`, { params: { q: location } });
-      if (response.data?.status === 'success') {
-        return { lat: response.data.lat, lng: response.data.lng };
-      }
-      return null;
-    } catch (err) {
-      console.error('Geocoding error:', err);
-      return null;
-    }
-  };
-
-  const fetchWeather = async (coords) => {
-    try {
-      const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&current=temperature_2m,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability&timezone=auto`);
-      return await response.json();
-    } catch (err) {
-      console.error('Weather error:', err);
-      return null;
-    }
-  };
-
-  const handlePolygonDrawn = (coords) => {
-    setPolygonCoords(coords);
-    const polyGeoJSON = {
-      type: "Polygon",
-      coordinates: [coords.map(([lat, lon]) => [lon, lat])] // [lon, lat] for backend
-    };
-    setRouteData(prev => ({
-      ...prev,
-      avoidancePolygon: polyGeoJSON,
-      stats: { distance: 'Loading...', time: 'Loading...', safety: 'Loading...' }
-    }));
-  };
-
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!startLocation || !endLocation) return setError('Please enter both start and end locations.');
-
-    setLoading(true);
-    setError('');
-    setRouteData(null);
-    setWeather(null);
-    setPolygonCoords([]);
-
-    const startCoords = await geocodeLocation(startLocation);
-    const endCoords = await geocodeLocation(endLocation);
-
-    if (!startCoords || !endCoords) {
-      setError('Could not find one or both locations. Please try again.');
-      setLoading(false);
-      return;
-    }
-
-    const midLat = (startCoords.lat + endCoords.lat) / 2;
-    const midLng = (startCoords.lng + endCoords.lng) / 2;
-    const weatherData = await fetchWeather({ lat: midLat, lng: midLng });
-
-    setRouteData({ 
-      startLocation, 
-      endLocation, 
-      startCoords, 
-      endCoords, 
-      stats: { distance: 0, time: 0, safety: 0 }
-    });
-    setWeather(weatherData);
-    setLoading(false);
-  };
+  const [startPlace, setStartPlace] = useState({ label: '', lat: null, lng: null });
+  const [endPlace, setEndPlace]     = useState({ label: '', lat: null, lng: null });
+  const [viaStops, setViaStops]     = useState([]);
+  const [disasterType, setDisasterType] = useState('Fire / Wildfire');
+  const [theme, setTheme]           = useState(() => localStorage.getItem('theme') || 'dark');
+  const [loading, setLoading]       = useState(false);
+  const [locating, setLocating]     = useState(false);
+  const [error, setError]           = useState('');
+  const [routeData, setRouteData]   = useState(null);
+  const [weather, setWeather]       = useState(null);
+  const [avoidancePolygon, setAvoidancePolygon] = useState(null);
+  const [mapInstance, setMapInstance] = useState(null);
 
   useEffect(() => {
-    const fetchRoute = async () => {
-      if (!routeData?.startCoords || !routeData?.endCoords) return;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
-      setLoading(true);
-      try {
-        const payload = {
-          startLocation: routeData.startLocation,
-          endLocation: routeData.endLocation,
-          startCoords: [routeData.startCoords.lng, routeData.startCoords.lat],
-          endCoords: [routeData.endCoords.lng, routeData.endCoords.lat],
-          avoidancePolygon: routeData.avoidancePolygon,
-          altIndex,
-          viaPoints: (stops||[]).filter(s => s.coords).map(s => [s.coords.lng, s.coords.lat])
-        };
-        console.log('Fetch Route Payload:', payload);
-        const response = await axios.post('http://localhost:8080/api/route', payload);
-        if (response.data.status === 'success') {
-          const { distance, time, safety, routeGeoJSON, instructions, rri, rriFactors, alternatives: altSums, altGeometries, pickedAlternativeIndex } = response.data;
-          const distanceKm = parseFloat(distance.replace(' km', '')) || 0;
-          const timeMin = parseInt(time.replace(' min', '')) || 0;
-          const safetyPerc = parseFloat(safety) || 0;
-          setRouteData(prev => ({
-            ...prev,
-            stats: { distance: distanceKm, time: timeMin / 60, safety: safetyPerc },
-            routeGeoJSON,
-            instructions: Array.isArray(instructions) ? instructions : [],
-            rri,
-            rriFactors,
-            altGeometries: Array.isArray(altGeometries) ? altGeometries : [],
-            hoverAltIndex: null,
-            hoverPoint: null,
-          }));
-          const currentIdx = typeof pickedAlternativeIndex === 'number' ? pickedAlternativeIndex : 0;
-          setAlternatives(Array.isArray(altSums) ? altSums.filter(a => a.index !== currentIdx) : []);
-          if (typeof pickedAlternativeIndex === 'number') setAltIndex(pickedAlternativeIndex);
-          console.log('Fetch Route Success:', response.data);
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
+  // ── GPS location ───────────────────────────────────────────
+  const useMyLocation = () => {
+    if (!navigator.geolocation) return setError('Geolocation not supported.');
+    setLocating(true);
+    setError('');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        try {
+          const r = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          const data = await r.json();
+          const name = (data.display_name || 'Current Location').split(',')[0];
+          setStartPlace({ label: data.display_name || 'Current Location', shortLabel: name, lat, lng });
+        } catch {
+          setStartPlace({ label: 'Current Location', lat, lng });
         }
-      } catch (error) {
-        console.error('Route fetch error:', error.response?.status, error.response?.data?.message || error.message);
-        setError('Failed to fetch route. Check backend logs.');
-        setRouteData(prev => ({
-          ...prev,
-          stats: { distance: 0, time: 0, safety: 0 }
-        }));
-      } finally {
-        setLoading(false);
-      }
+        setLocating(false);
+      },
+      () => { setError('Location access denied.'); setLocating(false); },
+      { timeout: 8000 }
+    );
+  };
+
+  // ── Weather ────────────────────────────────────────────────
+  const fetchWeather = async (lat, lon) => {
+    try {
+      const res = await axios.get(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`
+      );
+      if (res.data?.current_weather) setWeather(res.data.current_weather);
+    } catch (e) { console.warn('Weather fetch failed:', e); }
+  };
+
+  // ── Reusable Search Function ──────────────────────────────────
+  const performSearch = async (overrideAvoidance = null) => {
+    if (!startPlace.lat || !endPlace.lat) return;
+    
+    setLoading(true);
+    setError('');
+    const activeAvoidance = overrideAvoidance !== undefined ? overrideAvoidance : avoidancePolygon;
+
+    const payload = {
+      startLocation: startPlace.label,
+      endLocation:   endPlace.label,
+      startCoords:   [startPlace.lng, startPlace.lat],
+      endCoords:     [endPlace.lng, endPlace.lat],
+      viaPoints:     viaStops.map(s => [s.lng, s.lat]).filter(p => p[0] && p[1]),
+      avoidancePolygon: activeAvoidance,
+      disasterType,
     };
 
-    fetchRoute();
-  }, [routeData?.startCoords, routeData?.endCoords, routeData?.avoidancePolygon, altIndex]);
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+    try {
+      const res = await axios.post(`${API_BASE}/api/route`, payload, { timeout: 30000 });
+      const data = res.data || {};
+
+      const mapped = {
+        ...data,
+        distanceKm: data.distance ? parseFloat(data.distance) : null,
+        timeMin: data.time ? parseFloat(data.time) : null,
+        safetyScore: data.safety ?? null,
+        steps: data.instructions || [],
+        routePoints: (() => {
+          try {
+            const coords = data.routeGeoJSON?.coordinates;
+            if (Array.isArray(coords) && coords.length > 0) {
+              return coords.map(([lng, lat]) => [lat, lng]);
+            }
+          } catch {}
+          return [];
+        })(),
+      };
+
+      setRouteData(mapped);
+      const sc = payload.startCoords;
+      if (sc?.[1] && sc?.[0]) fetchWeather(sc[1], sc[0]);
+
+      if (mapInstance && mapped.routePoints.length > 1) {
+        try { mapInstance.fitBounds(mapped.routePoints, { padding: [60, 60] }); } catch {}
+      }
+    } catch (err) {
+      console.error('Route error:', err);
+      setError(err.response?.data?.message || 'Route calculation failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Route search event handler ────────────────────────────────
+  const handleSearch = (e) => {
+    e?.preventDefault();
+    if (!startPlace.lat || !endPlace.lat) {
+      return setError('Please select locations from the dropdown suggestions.');
+    }
+    performSearch(avoidancePolygon);
+  };
+
+  // Auto-update when polygon changes
+  useEffect(() => {
+    if (startPlace.lat && endPlace.lat) {
+      performSearch(avoidancePolygon);
+    }
+  }, [avoidancePolygon, startPlace, endPlace, viaStops, disasterType]);
+
 
   return (
-    <div className="flex h-screen w-screen" data-theme={theme}>
-      {isSidebarOpen && (
-        <motion.div
-          className={`sidebar ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100'} overflow-y-auto`}
-          initial={{ x: -380 }}
-          animate={{ x: 0 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        >
-          <div className="sidebar-header">
-            <h1 className="sidebar-title text-hsl(var(--foreground))">Evacuation Planner</h1>
-            <button onClick={toggleSidebar} className="close-btn" aria-label="Close sidebar">
-              <X size={20} className="text-hsl(var(--foreground))" />
-            </button>
+    <div className="app-root">
+      {/* Sidebar re-open button */}
+      <AnimatePresence>
+        {!isSidebarOpen && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="open-sidebar-btn"
+            onClick={() => setIsSidebarOpen(true)}
+          >
+            <Menu size={20} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* ── Sidebar ── */}
+      <motion.aside
+        initial={false}
+        animate={{ width: isSidebarOpen ? 400 : 0, minWidth: isSidebarOpen ? 400 : 0, opacity: isSidebarOpen ? 1 : 0 }}
+        transition={{ duration: 0.3 }}
+        className="sidebar"
+        style={{ overflow: 'hidden' }}
+      >
+        <div className="sidebar-header">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h1 className="sidebar-title">Disaster Evacuation Planner</h1>
           </div>
-          <form onSubmit={handleSearch} className="panel">
-            <div className="panel-title">
-              <MapPin size={18} className="text-primary" />
-              <span className="text-hsl(var(--foreground))">Route Planner</span>
-            </div>
-            <input
-              type="text"
-              value={startLocation}
-              onChange={(e) => setStartLocation(e.target.value)}
-              placeholder="Start Location (e.g., Bhopal)"
-              className="input-field mb-2 text-hsl(var(--foreground))"
-              aria-label="Start location"
-            />
-            <input
-              type="text"
-              value={endLocation}
-              onChange={(e) => setEndLocation(e.target.value)}
-              placeholder="End Location (e.g., Jabalpur)"
-              className="input-field mb-2 text-hsl(var(--foreground))"
-              aria-label="End location"
-            />
-            <div className="mb-2">
-              <div className="text-xs text-gray-400 mb-1">Via Stops</div>
-              {stops.map((s, i) => (
-                <div key={i} className="flex gap-2 mb-1">
-                  <input
-                    type="text"
-                    value={s.label || ''}
-                    onChange={(e) => { const arr = [...stops]; arr[i] = { ...arr[i], label: e.target.value }; setStops(arr); }}
-                    placeholder={`Stop ${i+1}`}
-                    className="input-field text-hsl(var(--foreground)) flex-1"
+        </div>
+
+        <div className="sidebar-body">
+          {/* Plan Form */}
+          <div className="panel">
+            <div className="panel-title"><Navigation size={15} className="icon" /> Plan Evacuation</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+              <div className="input-row">
+                <SearchInput
+                  label="From"
+                  placeholder="Starting point…"
+                  value={startPlace.label}
+                  onChange={setStartPlace}
+                  icon={MapPin}
+                  recentKey="recent_from"
+                />
+                <button onClick={useMyLocation} disabled={locating} className="loc-btn" style={{ marginTop: '1.55rem' }}>
+                  {locating ? <div className="search-spinner" /> : <MapPin size={16} />}
+                </button>
+              </div>
+
+              {viaStops.map((stop, idx) => (
+                <div key={idx} className="input-row">
+                  <SearchInput
+                    label={`Via stop ${idx + 1}`}
+                    placeholder="Waypoint…"
+                    value={stop.label}
+                    onChange={(val) => {
+                      const updated = [...viaStops]; updated[idx] = val; setViaStops(updated);
+                    }}
+                    recentKey={`recent_via_${idx}`}
                   />
-                  <button type="button" className="btn-primary" onClick={async () => {
-                    if (!stops[i]?.label) return;
-                    const c = await geocodeLocation(stops[i].label);
-                    const arr = [...stops]; arr[i] = { ...arr[i], coords: c }; setStops(arr);
-                  }}>Geocode</button>
-                  <button type="button" className="btn-primary" onClick={() => setStops(stops.filter((_, idx) => idx !== i))}>Del</button>
+                  <button className="btn-icon" style={{ marginTop: '1.55rem' }} onClick={() => setViaStops(v => v.filter((_, i) => i !== idx))}>
+                    <X size={14} />
+                  </button>
                 </div>
               ))}
-              <button type="button" className="btn-primary" onClick={() => setStops([...(stops||[]), { label: '', coords: null }])}>Add Stop</button>
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <label className="text-sm text-gray-400">Disaster Type</label>
-              <select
-                value={disasterType}
-                onChange={(e) => setDisasterType(e.target.value)}
-                className="input-field text-hsl(var(--foreground))"
+
+              <SearchInput
+                label="Destination"
+                placeholder="Safe location?"
+                value={endPlace.label}
+                onChange={setEndPlace}
+                icon={ChevronRight}
+                recentKey="recent_to"
+              />
+
+              <button
+                className="btn-secondary"
+                style={{ alignSelf: 'flex-start' }}
+                onClick={() => setViaStops(v => [...v, { label: '', lat: null, lng: null }])}
               >
-                <option value="general">General</option>
-                <option value="flood">Flood / Ocean</option>
-                <option value="fire">Fire</option>
-                <option value="industrial">Industrial</option>
-              </select>
+                <MapIcon size={14} /> Add Via Stop
+              </button>
+
+              <div>
+                <label className="label">Disaster Context</label>
+                <select
+                  className="input-field disaster-select"
+                  value={disasterType}
+                  onChange={e => setDisasterType(e.target.value)}
+                >
+                  <option value="General Emergency">General Emergency</option>
+                  <option value="Flood / Ocean">Flood / Ocean</option>
+                  <option value="Fire / Wildfire">Fire / Wildfire</option>
+                  <option value="Industrial Hazard">Industrial Hazard</option>
+                </select>
+              </div>
+
+              <button className="btn-primary" onClick={handleSearch} disabled={loading}>
+                {loading ? <><div className="search-spinner" style={{ marginRight: 8 }} /> Calculating…</> : 'Search Evacuation Route'}
+              </button>
+
+              {error && <div className="error-msg">{error}</div>}
             </div>
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                  className="w-5 h-5 border-2 border-hsl(var(--primary-foreground)) border-t-transparent rounded-full"
-                />
-              ) : (
-                <Search size={18} className="text-hsl(var(--primary-foreground))" />
-              )}
-              {loading ? 'Searching Route...' : 'Search Route'}
-            </button>
-            {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-          </form>
+          </div>
+
+          {/* Route Stats */}
+          {routeData && (
+            <ErrorBoundary>
+              <div className="panel slide-in">
+                <div className="panel-title"><Shield size={15} className="icon" /> Route Statistics</div>
+                <div className="stat-grid">
+                  <div className="stat-card">
+                    <div className="stat-value">{safeFix(routeData.distanceKm)}</div>
+                    <div className="stat-label">KM</div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-value">{safeFix(routeData.timeMin != null ? routeData.timeMin / 60 : null)}</div>
+                    <div className="stat-label">Hours</div>
+                  </div>
+                  <div className="stat-card" style={{ borderColor: 'var(--success)' }}>
+                    <div className="stat-value" style={{ color: 'var(--success)' }}>
+                      {routeData.safetyScore != null ? `${parseFloat(routeData.safetyScore).toFixed(2)}%` : '—'}
+                    </div>
+                    <div className="stat-label">Safety</div>
+                  </div>
+                </div>
+              </div>
+            </ErrorBoundary>
+          )}
+
+          {/* Risk Factors */}
+          {routeData && (
+            <ErrorBoundary>
+              <div className="panel slide-in">
+                <div className="panel-title"><Info size={15} className="icon" /> Risk Analysis</div>
+                <SafetyDashboard rri={routeData.rri} factors={routeData.rriFactors || {}} />
+              </div>
+            </ErrorBoundary>
+          )}
+
+          {/* Weather */}
+          {weather && (
+            <ErrorBoundary>
+              <div className="panel slide-in">
+                <div className="panel-title"><Cloud size={15} className="icon" /> Area Forecast</div>
+                <div className="weather-card">
+                  <div className="weather-temp">{Math.round(weather.temperature ?? 0)}°</div>
+                  <div className="weather-info">
+                    <div className="weather-label">Wind: {weather.windspeed ?? '—'} km/h</div>
+                    {weather.weathercode > 50 && (
+                      <div className="weather-alert">Risk of severe weather</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </ErrorBoundary>
+          )}
+        </div>
+
+        {/* Footer / Theme toggle */}
+        <div className="sidebar-footer">
+          <button className="theme-toggle-btn" onClick={toggleTheme}>
+            {theme === 'dark' ? <ThermometerSun size={16} /> : <Wind size={16} />}
+            Switch to {theme === 'dark' ? 'Light' : 'Dark'} Mode
+          </button>
+        </div>
+      </motion.aside>
+
+      {/* ── Map ── */}
+      <main className="map-wrapper" style={{ flex: 1, height: '100vh', position: 'relative' }}>
+        <ErrorBoundary>
+          <MapComponent
+            startCoords={startPlace.lat ? [startPlace.lat, startPlace.lng] : null}
+            endCoords={endPlace.lat   ? [endPlace.lat,   endPlace.lng]   : null}
+            routePoints={routeData?.routePoints || []}
+            avoidancePolygon={avoidancePolygon}
+            onPolygonCreated={setAvoidancePolygon}
+            onPolygonDeleted={() => setAvoidancePolygon(null)}
+            theme={theme}
+            setMapInstance={setMapInstance}
+          />
+        </ErrorBoundary>
+
+        {/* Turn-by-turn floating panel */}
+        <AnimatePresence>
           {routeData && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="panel mt-4"
+              key="turn-panel"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="floating-panel"
+              style={{ bottom: 20, right: 20, width: 360, maxHeight: 420, overflowY: 'auto' }}
             >
-              <div className="panel-title">
-                <Clock size={18} className="text-primary" />
-                <span className="text-hsl(var(--foreground))">Route Statistics</span>
+              <div className="floating-panel-header">
+                <div className="floating-panel-title"><ArrowRight size={14} /> Turn-by-Turn</div>
+                <button className="close-btn" onClick={() => setRouteData(null)}>
+                  <X size={14} />
+                </button>
               </div>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="bg-primary/10 p-2 rounded-lg">
-                  <div className="font-bold text-lg text-hsl(var(--foreground))">
-                    {typeof routeData.stats.distance === 'number' ? routeData.stats.distance.toFixed(1) : '0'} km
-                  </div>
-                  <div className="text-gray-400 text-sm">Distance</div>
-                </div>
-                <div className="bg-primary/10 p-2 rounded-lg">
-                  <div className="font-bold text-lg text-hsl(var(--foreground))">
-                    {typeof routeData.stats.time === 'number' ? routeData.stats.time.toFixed(2) : '0'} h
-                  </div>
-                  <div className="text-gray-400 text-sm">Time</div>
-                </div>
-                <div className="bg-primary/10 p-2 rounded-lg">
-                  <div className="font-bold text-lg text-hsl(var(--foreground))">
-                    {typeof routeData.stats.safety === 'number' ? routeData.stats.safety.toFixed(1) : '0'}%
-                  </div>
-                  <div className="text-gray-400 text-sm">Safety</div>
-                </div>
-              </div>
+              <ErrorBoundary>
+                <TurnByTurn steps={Array.isArray(routeData.steps) ? routeData.steps : []} />
+              </ErrorBoundary>
             </motion.div>
           )}
-          {routeData?.rriFactors && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="panel mt-4">
-              <div className="panel-title">
-                <span className="text-hsl(var(--foreground))">Safety Breakdown</span>
-              </div>
-              <SafetyDashboard rri={routeData?.rri} factors={routeData?.rriFactors} />
-            </motion.div>
-          )}
-          {/* Removed sidebar Turn-by-Turn (now floating on map) */}
 
-          {weather && (
+          {/* Alternative routes */}
+          {routeData?.alternatives?.length > 0 && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="panel mt-4"
+              key="alt-panel"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="floating-panel"
+              style={{ top: 20, right: 20, width: 300 }}
             >
-              <div className="panel-title">
-                <ThermometerSun size={18} className="text-primary" />
-                <span className="text-hsl(var(--foreground))">Weather Alert</span>
+              <div className="floating-panel-header">
+                <div className="floating-panel-title"><MapIcon size={14} /> Alt. Routes</div>
               </div>
-              <div className="text-center">
-                <div className="font-bold text-lg text-hsl(var(--foreground))">{weather.current.temperature_2m}°C</div>
-                <div className="text-gray-400 text-sm">Current Temperature</div>
-                {weather.current.weather_code === 3 && <p className="text-red-400 text-sm mt-2">Rainy conditions - Drive carefully!</p>}
-              </div>
+              <ErrorBoundary>
+                <AlternativesList items={routeData.alternatives} selectedIndex={0} />
+              </ErrorBoundary>
             </motion.div>
           )}
-          <button onClick={toggleTheme} className="mt-auto btn-primary">
-            {theme === 'dark' ? <Sun size={20} className="text-hsl(var(--primary-foreground))" /> : <Moon size={20} className="text-hsl(var(--primary-foreground))" />}
-            <span className="text-hsl(var(--primary-foreground))">Toggle Theme</span>
-          </button>
-        </motion.div>
-      )}
-      <MapComponent routeData={routeData} onPolygonDrawn={handlePolygonDrawn} disasterType={disasterType} showWeather={showWeather} showTraffic={showTraffic} />
-
-      {/* Alternatives List Floating Card */}
-      {showAlternatives && (
-        <div className="fixed top-20 right-4 z-[1000] w-72 p-3 rounded-lg shadow-xl"
-          style={{ background: theme === 'dark' ? 'rgba(17,24,39,0.95)' : 'rgba(255,255,255,0.95)', border: '1px solid rgba(100,116,139,0.3)' }}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-semibold text-hsl(var(--foreground))">Alternatives</div>
-            <div className="flex items-center gap-2 text-xs">
-              <label className="flex items-center gap-1 text-gray-400">
-                <input type="checkbox" checked={showWeather} onChange={(e) => setShowWeather(e.target.checked)} /> Weather
-              </label>
-              <label className="flex items-center gap-1 text-gray-400">
-                <input type="checkbox" checked={showTraffic} onChange={(e) => setShowTraffic(e.target.checked)} /> Traffic
-              </label>
-              <button className="text-gray-400" onClick={() => setShowAlternatives(false)}>Close</button>
-            </div>
-          </div>
-          {alternatives.length > 0 ? (
-            <AlternativesList items={alternatives} selectedIndex={altIndex ?? 0} onSelect={(idx) => { setAltIndex(idx); }} onHover={(idx)=> setRouteData(prev=> ({...prev, hoverAltIndex: idx}))} />
-          ) : (
-            <div className="text-xs text-gray-400">No alternative routes available for this query.</div>
-          )}
-        </div>
-      )}
-
-      {/* Small open buttons */}
-      {!showAlternatives && alternatives.length > 0 && (
-        <button className="fixed top-20 right-4 z-[1000] btn-primary px-3 py-1" onClick={()=> setShowAlternatives(true)}>Alts</button>
-      )}
-      {!showAlternatives && alternatives.length === 0 && (
-        <button className="fixed top-20 right-4 z-[1000] btn-primary px-3 py-1" onClick={()=> setShowAlternatives(true)}>Layers</button>
-      )}
-      {!showSteps && routeData?.instructions?.length > 0 && (
-        <button className="fixed bottom-16 right-4 z-[1000] btn-primary px-3 py-1" onClick={()=> setShowSteps(true)}>Steps</button>
-      )}
-
-      {/* Floating Turn-by-Turn Panel (always visible when instructions are present) */}
-      {showSteps && routeData?.instructions?.length > 0 && (
-        <div
-          className="fixed bottom-16 right-4 z-[1000] w-80 max-h-[50vh] overflow-y-auto p-3 rounded-lg shadow-xl"
-          style={{
-            background: theme === 'dark' ? 'rgba(17, 24, 39, 0.95)' : 'rgba(255,255,255,0.95)',
-            border: '1px solid rgba(100,116,139,0.3)'
-          }}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-semibold text-hsl(var(--foreground))">Turn-by-Turn</div>
-            <button className="text-xs text-gray-400 hover:text-gray-200" onClick={()=> setShowSteps(false)}>Close</button>
-          </div>
-          <TurnByTurn steps={routeData.instructions} onStepHover={(pt) => setRouteData(prev => ({ ...prev, hoverPoint: pt }))} />
-        </div>
-      )}
-      <button
-        onClick={toggleSidebar}
-        className="fixed top-4 left-4 z-50 btn-primary p-2"
-        aria-label="Toggle sidebar"
-        style={{ display: isSidebarOpen ? 'none' : 'block' }}
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </button>
+        </AnimatePresence>
+      </main>
     </div>
   );
 }
-
-export default App;

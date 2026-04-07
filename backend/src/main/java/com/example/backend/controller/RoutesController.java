@@ -167,11 +167,12 @@ public class RoutesController {
                         var simplifiedGeom = TopologyPreservingSimplifier.simplify(rawPoly, 0.0003);
                         Polygon buffered = (Polygon) simplifiedGeom.buffer(0.00045);
                         // Clip to bbox of start/end with margin
+                        // Relaxed bbox clipping: allow more space for detours (5.0 degrees ≈ 500km)
                         Envelope env = new Envelope(
-                                Math.min(startCoords[0], endCoords[0]) - 0.5,
-                                Math.max(startCoords[0], endCoords[0]) + 0.5,
-                                Math.min(startCoords[1], endCoords[1]) - 0.5,
-                                Math.max(startCoords[1], endCoords[1]) + 0.5);
+                                Math.min(startCoords[0], endCoords[0]) - 5.0,
+                                Math.max(startCoords[0], endCoords[0]) + 5.0,
+                                Math.min(startCoords[1], endCoords[1]) - 5.0,
+                                Math.max(startCoords[1], endCoords[1]) + 5.0);
                         var bboxGeom = geometryFactory.toGeometry(env);
                         var clipped = buffered.intersection(bboxGeom);
                         if (clipped instanceof Polygon) {
@@ -208,7 +209,7 @@ public class RoutesController {
                 List<double[]> poly = avoidanceCoords.get(0);
                 for (int i = 0; i < poly.size(); i++) {
                     double[] p = poly.get(i);
-                    if (i > 0) blockArea.append(":");
+                    if (i > 0) blockArea.append(",");
                     blockArea.append(p[1]).append(",").append(p[0]);
                 }
                 StringBuilder ghParams = new StringBuilder();
@@ -346,7 +347,7 @@ public class RoutesController {
                             List<double[]> poly2 = avoidanceCoords.get(0);
                             for (int i = 0; i < poly2.size(); i++) {
                                 double[] p = poly2.get(i);
-                                if (i > 0) blockArea2.append(":");
+                                if (i > 0) blockArea2.append(",");
                                 blockArea2.append(p[1]).append(",").append(p[0]);
                             }
                             ghParams2.append("&block_area=")
