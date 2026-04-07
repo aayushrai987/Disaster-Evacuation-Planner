@@ -160,3 +160,16 @@ Tested with OSM tiles for **Central India** (Bhopal → Jabalpur, 280 km).
 * Mobile app (React Native)
 * Offline local GraphHopper instance
 
+---
+
+
+## 👤 Authors
+
+* **[Arnav Nigam]**
+* GitHub: `[https://github.com/arnavnigam168]`
+* **[Aayush rai]**
+* GitHub: `[https://github.com/aayushrai987]`
+
+## License
+
+This project is licensed under the MIT License.
