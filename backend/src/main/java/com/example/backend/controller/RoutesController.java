@@ -102,6 +102,20 @@ public class RoutesController {
         }
     }
 
+    @GetMapping("/reverse")
+    public ResponseEntity<Map<String, Object>> reverseGeocode(@RequestParam("lat") double lat, @RequestParam("lon") double lon) {
+        try {
+            String url = String.format("https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f&addressdetails=1", lat, lon);
+            ResponseEntity<JsonNode> resp = restTemplate.getForEntity(url, JsonNode.class);
+            if (resp.getStatusCode().is2xxSuccessful() && resp.getBody() != null) {
+                return ResponseEntity.ok(Map.of("status", "success", "raw", resp.getBody(), "display_name", resp.getBody().get("display_name").asText()));
+            }
+            return ResponseEntity.status(503).body(Map.of("status", "error", "message", "Reverse geocoding unavailable"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("status", "error", "message", e.getMessage()));
+        }
+    }
+
     @PostMapping("/route")
     public ResponseEntity<Map<String, Object>> calculateRoute(@RequestBody Map<String, Object> request) {
         Map<String, Object> response = new HashMap<>();

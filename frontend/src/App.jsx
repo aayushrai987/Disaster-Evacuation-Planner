@@ -73,10 +73,9 @@ export default function App() {
       async (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         try {
-          const r = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
-            { headers: { 'Accept-Language': 'en' } }
-          );
+          const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+          const baseUrl = API_BASE.replace(/\/api$/, '');
+          const r = await fetch(`${baseUrl}/api/reverse?lat=${lat}&lon=${lng}`);
           const data = await r.json();
           const name = (data.display_name || 'Current Location').split(',')[0];
           setStartPlace({ label: data.display_name || 'Current Location', shortLabel: name, lat, lng });
@@ -120,7 +119,9 @@ export default function App() {
 
     const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
     try {
-      const res = await axios.post(`${API_BASE}/api/route`, payload, { timeout: 30000 });
+      // If API_BASE already ends in /api, we don't add it again
+      const baseUrl = API_BASE.endsWith('/api') ? API_BASE : `${API_BASE}/api`;
+      const res = await axios.post(`${baseUrl}/route`, payload, { timeout: 30000 });
       const data = res.data || {};
 
       const mapped = {
