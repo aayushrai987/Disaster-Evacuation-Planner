@@ -51,15 +51,12 @@ export default function SearchInput({ value, onChange, placeholder, label, icon:
     if (!q || q.length < 2) { setSuggestions([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-      const baseUrl = API_BASE.replace(/\/api$/, '');
-      const url = `${baseUrl}/api/geocode?q=${encodeURIComponent(q)}`;
-      
-      const res = await fetch(url);
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=1&limit=5`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
       const data = await res.json();
       
-      if (data.status === 'success' && data.raw) {
-        setSuggestions([data.raw]);
+      if (Array.isArray(data) && data.length > 0) {
+        setSuggestions(data);
       } else {
         setSuggestions([]);
       }

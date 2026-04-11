@@ -73,9 +73,7 @@ export default function App() {
       async (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         try {
-          const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-          const baseUrl = API_BASE.replace(/\/api$/, '');
-          const r = await fetch(`${baseUrl}/api/reverse?lat=${lat}&lon=${lng}`);
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`, { headers: { 'Accept-Language': 'en' } });
           const data = await r.json();
           const name = (data.display_name || 'Current Location').split(',')[0];
           setStartPlace({ label: data.display_name || 'Current Location', shortLabel: name, lat, lng });
