@@ -51,12 +51,38 @@ export default function SearchInput({ value, onChange, placeholder, label, icon:
     if (!q || q.length < 2) { setSuggestions([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=1&limit=5`;
+      // Use Photon (Komoot) API for robust autocomplete without strict rate limiting
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5`;
       const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
       const data = await res.json();
       
-      if (Array.isArray(data) && data.length > 0) {
-        setSuggestions(data);
+      if (data && data.features && data.features.length > 0) {
+        const mapped = data.features.map(f => {
+          const props = f.properties;
+          const coords = f.geometry.coordinates; // [lon, lat]
+          
+          let displayParts = [];
+          if (props.name) displayParts.push(props.name);
+          if (props.street) displayParts.push(props.street);
+          if (props.city && props.city !== props.name) displayParts.push(props.city);
+          if (props.state && props.state !== props.name && props.state !== props.city) displayParts.push(props.state);
+          if (props.country) displayParts.push(props.country);
+          
+          // Deduplicate the display parts while keeping order
+          const uniqueParts = [...new Set(displayParts)];
+          const displayName = uniqueParts.join(', ') || 'Unknown Location';
+          
+          return {
+            place_id: `${props.osm_id}_${props.osm_type}_${Math.random()}`,
+            name: props.name || uniqueParts[0],
+            display_name: displayName,
+            lat: coords[1],
+            lon: coords[0],
+            type: props.osm_value,
+            class: props.osm_key
+          };
+        });
+        setSuggestions(mapped);
       } else {
         setSuggestions([]);
       }
