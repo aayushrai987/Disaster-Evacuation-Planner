@@ -119,7 +119,7 @@ export default function App() {
     try {
       // If API_BASE already ends in /api, we don't add it again
       const baseUrl = API_BASE.endsWith('/api') ? API_BASE : `${API_BASE}/api`;
-      const res = await axios.post(`${baseUrl}/route`, payload, { timeout: 30000 });
+      const res = await axios.post(`${baseUrl}/route`, payload, { timeout: 90000 });
       const data = res.data || {};
 
       const mapped = {
@@ -148,7 +148,11 @@ export default function App() {
       }
     } catch (err) {
       console.error('Route error:', err);
-      setError(err.response?.data?.message || 'Route calculation failed.');
+      let errorMsg = err.response?.data?.message || 'Route calculation failed.';
+      if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+        errorMsg = 'Request timed out due to a slow backend cold-start or a long route. Please try again.';
+      }
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
