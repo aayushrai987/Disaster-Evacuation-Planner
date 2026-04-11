@@ -245,8 +245,13 @@ public class RoutesController {
 
                 ghUrl = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams.toString();
                 System.out.println("Fetching route with block_area: " + ghUrl);
-                ghResponseEntity = restTemplate.getForEntity(ghUrl, JsonNode.class);
-                ghResponse = ghResponseEntity.getBody();
+                try {
+                    ghResponseEntity = restTemplate.getForEntity(ghUrl, JsonNode.class);
+                    ghResponse = ghResponseEntity.getBody();
+                } catch (Exception ex) {
+                    System.out.println("GraphHopper API failed (with block_area): " + ex.getMessage());
+                    ghResponse = null;
+                }
             } else {
                 // Use GET request without avoidance
                 StringBuilder ghParams = new StringBuilder();
@@ -264,8 +269,13 @@ public class RoutesController {
                 
                 ghUrl = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams.toString();
                 System.out.println("GET URL (no avoidance): " + ghUrl);
-                ghResponseEntity = restTemplate.getForEntity(ghUrl, JsonNode.class);
-                ghResponse = ghResponseEntity.getBody();
+                try {
+                    ghResponseEntity = restTemplate.getForEntity(ghUrl, JsonNode.class);
+                    ghResponse = ghResponseEntity.getBody();
+                } catch (Exception ex) {
+                    System.out.println("GraphHopper API failed (no avoidance): " + ex.getMessage());
+                    ghResponse = null;
+                }
             }
             System.out.println("=== GRAPHHOPPER RESPONSE ===");
             if (ghResponse != null) {
