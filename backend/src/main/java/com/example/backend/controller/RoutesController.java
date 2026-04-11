@@ -518,7 +518,11 @@ public class RoutesController {
                 routeEntity.setEstimatedTime((int) Math.round(duration));
                 routeEntity.setSafetyScore(safetyScore);
                 routeEntity.setRriFactors(objectMapper.writeValueAsString(rri));
-                routeRepository.save(routeEntity);
+                try {
+                    routeRepository.save(routeEntity);
+                } catch (Exception dbEx) {
+                    System.out.println("Warning: Failed to save computed route to database: " + dbEx.getMessage());
+                }
 
                 response.put("status", "success");
                 response.put("message", "Route calculated successfully" + (avoidanceCoords.isEmpty() ? "" : " (avoidance applied)"));

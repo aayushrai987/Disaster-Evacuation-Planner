@@ -3,6 +3,12 @@ CREATE TABLE IF NOT EXISTS route (
     start_location VARCHAR(255) NOT NULL,
     end_location VARCHAR(255) NOT NULL,
     route_geo_json TEXT NOT NULL,
+    avoidance_zones TEXT,
+    distance DOUBLE PRECISION,
+    estimated_time INTEGER,
+    safety_score DOUBLE PRECISION,
+    multi_stops TEXT,
+    rri_factors TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 CREATE EXTENSION IF NOT EXISTS postgis;
