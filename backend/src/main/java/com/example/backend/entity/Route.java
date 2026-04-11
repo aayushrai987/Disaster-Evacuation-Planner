@@ -4,9 +4,9 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "routes", indexes = {
-    @Index(name = "idx_start_end", columnList = "startLocation, endLocation"),
-    @Index(name = "idx_created_at", columnList = "createdAt")
+@Table(name = "route", indexes = {
+    @Index(name = "idx_start_end", columnList = "start_location, end_location"),
+    @Index(name = "idx_created_at", columnList = "created_at")
 })
 public class Route {
     @Id
@@ -17,7 +17,7 @@ public class Route {
     private String endLocation;
 
     // Store the raw GeoJSON string from the API in a TEXT column
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "route_geo_json", columnDefinition = "TEXT")
     private String routeGeometry;
 
     // Add avoidanceZones field to store JSON string of avoidance coordinates
