@@ -127,6 +127,7 @@ export default function App() {
         distanceKm: data.distance ? parseFloat(data.distance) : null,
         timeMin: data.time ? parseFloat(data.time) : null,
         safetyScore: data.safety ?? null,
+        warning: data.warning ?? null,
         steps: data.instructions || [],
         routePoints: (() => {
           try {
@@ -282,9 +283,15 @@ export default function App() {
             </div>
           </div>
 
-          {/* Route Stats */}
           {routeData && (
             <ErrorBoundary>
+              {routeData.warning && (
+                <div className="panel slide-in" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'var(--danger)', color: '#fee2e2' }}>
+                  <div className="panel-title" style={{ color: 'var(--danger)' }}><Shield size={15} className="icon" /> Safety Warning</div>
+                  <div style={{ fontSize: '0.9rem', lineHeight: '1.4' }}>{routeData.warning}</div>
+                </div>
+              )}
+              
               <div className="panel slide-in">
                 <div className="panel-title"><Shield size={15} className="icon" /> Route Statistics</div>
                 <div className="stat-grid">
