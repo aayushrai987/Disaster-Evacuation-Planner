@@ -236,7 +236,7 @@ public class RoutesController {
                 }
                 ghParams.append("&point=").append(endCoords[1]).append(",").append(endCoords[0]);
                 ghParams.append("&vehicle=car&calc_points=true&geometries=geojson&points_encoded=false");
-                ghParams.append("&alternatives=3&instructions=true&ch.disable=true");
+                ghParams.append("&instructions=true&ch.disable=true");
                 ghParams.append("&details=road_class&details=surface&details=road_access&elevation=true");
                 ghParams.append("&block_area=").append(java.net.URLEncoder.encode(blockAreaStr.toString(), java.nio.charset.StandardCharsets.UTF_8));
 
@@ -249,8 +249,11 @@ public class RoutesController {
                     System.out.println("GraphHopper API failed (with block_area): " + ex.getMessage());
                     ghResponse = null;
                 }
-            } else {
-                // Use GET request without avoidance
+            } 
+            
+            // If avoidance request failed (e.g. Free API >200km flexible mode limit) OR no avoidance was requested
+            if (ghResponse == null) {
+                // Use GET request without avoidance and without ch.disable
                 StringBuilder ghParams = new StringBuilder();
                 ghParams.append("point=").append(startCoords[1]).append(",").append(startCoords[0]);
                 if (viaPoints != null) {
@@ -261,16 +264,16 @@ public class RoutesController {
                 }
                 ghParams.append("&point=").append(endCoords[1]).append(",").append(endCoords[0]);
                 ghParams.append("&vehicle=car&calc_points=true&geometries=geojson&points_encoded=false");
-                ghParams.append("&alternatives=3&instructions=true&ch.disable=true");
+                ghParams.append("&instructions=true");
                 ghParams.append("&details=road_class&details=surface&details=road_access&elevation=true");
                 
                 ghUrl = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams.toString();
-                System.out.println("GET URL (no avoidance): " + ghUrl);
+                System.out.println("GET URL (fallback/no avoidance): " + ghUrl);
                 try {
                     ghResponseEntity = restTemplate.getForEntity(ghUrl, JsonNode.class);
                     ghResponse = ghResponseEntity.getBody();
                 } catch (Exception ex) {
-                    System.out.println("GraphHopper API failed (no avoidance): " + ex.getMessage());
+                    System.out.println("GraphHopper API failed (fallback/no avoidance): " + ex.getMessage());
                     ghResponse = null;
                 }
             }
@@ -363,20 +366,9 @@ public class RoutesController {
                         ghParams2.append("&point=").append(d[1]).append(",").append(d[0]);
                         ghParams2.append("&point=").append(endCoords[1]).append(",").append(endCoords[0]);
                         ghParams2.append("&vehicle=car&calc_points=true&geometries=geojson&points_encoded=false");
-                        ghParams2.append("&alternatives=1&instructions=true&ch.disable=true");
+                        ghParams2.append("&alternatives=1&instructions=true");
                         ghParams2.append("&details=road_class&details=surface&details=road_access&elevation=true");
-                        if (!avoidanceCoords.isEmpty()) {
-                            // reuse block_area string from above branch if present
-                            StringBuilder blockArea2 = new StringBuilder();
-                            List<double[]> poly2 = avoidanceCoords.get(0);
-                            for (int i = 0; i < poly2.size(); i++) {
-                                double[] p = poly2.get(i);
-                                if (i > 0) blockArea2.append(",");
-                                blockArea2.append(p[1]).append(",").append(p[0]);
-                            }
-                            ghParams2.append("&block_area=")
-                                .append(java.net.URLEncoder.encode(blockArea2.toString(), java.nio.charset.StandardCharsets.UTF_8));
-                        }
+                        // DO NOT set ch.disable=true or block_area here so >200km detours route successfully via CH.
                         String url2 = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams2.toString();
                         try {
                             ResponseEntity<JsonNode> detourResp = restTemplate.getForEntity(url2, JsonNode.class);
