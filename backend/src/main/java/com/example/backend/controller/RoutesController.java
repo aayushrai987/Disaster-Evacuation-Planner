@@ -211,9 +211,9 @@ public class RoutesController {
 
             // GraphHopper API Call
             String apiKey = "5e599a47-2998-4da7-aca8-59ea2294f926";
-            String ghUrl;
-            ResponseEntity<JsonNode> ghResponseEntity;
-            JsonNode ghResponse;
+            String ghUrl = null;
+            ResponseEntity<JsonNode> ghResponseEntity = null;
+            JsonNode ghResponse = null;
             
             if (!avoidanceCoords.isEmpty() && avoidanceCoords.get(0).size() >= 3) {
                 System.out.println("=== AVOIDANCE POLYGON: Using block_area & alternatives ===");
@@ -411,7 +411,7 @@ public class RoutesController {
                     }
                     if (detourBestResponse != null) {
                         ghResponse = detourBestResponse; // replace with detour response
-                        pathsNode = ghResponse.get("paths");
+                        pathsNode = ghResponse.get("paths"); // reassign to new detour paths
                         bestIdx = 0;
                         bestScore = detourBestScore;
                     }
