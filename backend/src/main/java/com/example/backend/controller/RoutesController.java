@@ -123,7 +123,9 @@ public class RoutesController {
             System.out.println("Request received: " + request);
             String startLocation = (String) request.get("startLocation");
             String endLocation = (String) request.get("endLocation");
+            @SuppressWarnings("unchecked")
             List<Double> startCoordsList = (List<Double>) request.get("startCoords");
+            @SuppressWarnings("unchecked")
             List<Double> endCoordsList = (List<Double>) request.get("endCoords");
             Object avoidanceObj = request.get("avoidancePolygon");
             @SuppressWarnings("unchecked")
@@ -339,9 +341,7 @@ public class RoutesController {
                 }
 
                 // If still intersecting, try adaptive forced detours with progressively larger offsets
-                boolean forcedDetourTried = false;
                 if (avoidancePolygon != null && bestScore > 1e-6) {
-                    forcedDetourTried = true;
                     Coordinate startC = new Coordinate(startCoords[0], startCoords[1]);
                     Coordinate endC   = new Coordinate(endCoords[0],   endCoords[1]);
                     Coordinate centroid = avoidancePolygon.getCentroid().getCoordinate();
@@ -624,20 +624,14 @@ public class RoutesController {
         return geometryFactory.createPolygon(coordinates);
     }
 
-    private double calculateSafetyScore(double distanceKm, double intersectionRatio, int hasAvoidance) {
-        double baseScore = 95.0;
-        double distancePenalty = Math.min(distanceKm / 50, 10.0);
-        double avoidancePenalty = hasAvoidance * 5.0;
-        double intersectionPenalty = intersectionRatio * 50.0;
-        return Math.max(0.0, Math.min(100.0, baseScore - distancePenalty - avoidancePenalty - intersectionPenalty));
-    }
+
 
     private Map<String, Object> computeRriAndBreakdown(JsonNode path, int avoidanceCount) {
         Map<String, Object> out = new HashMap<>();
         double roadRisk = 0.3; // default
-        double elevationRisk = 0.0; // placeholder
+        double elevationRisk = 0.0; // placeholder (elevation data not yet available)
         double avoidanceFactor = Math.min(1.0, avoidanceCount * 0.2);
-        double dynamicRisk = 0.0; // TODO: integrate traffic/weather providers
+        double dynamicRisk = 0.0; // reserved for future traffic/weather integration
 
         if (path.has("details")) {
             JsonNode details = path.get("details");
