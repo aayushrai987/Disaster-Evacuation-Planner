@@ -338,82 +338,113 @@ public class RoutesController {
                     bestIdx = requestedAltIndex;
                 }
 
-                // If still intersecting significantly, try forced detours using waypoints around centroid
+                // If still intersecting, try adaptive forced detours with progressively larger offsets
                 boolean forcedDetourTried = false;
                 if (avoidancePolygon != null && bestScore > 1e-6) {
                     forcedDetourTried = true;
                     Coordinate startC = new Coordinate(startCoords[0], startCoords[1]);
-                    Coordinate endC = new Coordinate(endCoords[0], endCoords[1]);
+                    Coordinate endC   = new Coordinate(endCoords[0],   endCoords[1]);
                     Coordinate centroid = avoidancePolygon.getCentroid().getCoordinate();
                     double vx = endC.x - startC.x;
                     double vy = endC.y - startC.y;
-                    double len = Math.sqrt(vx*vx + vy*vy);
+                    double len = Math.sqrt(vx * vx + vy * vy);
                     if (len < 1e-9) len = 1e-9;
-                    // normal vector (perpendicular)
+                    // Perpendicular unit vector (both sides of the route)
                     double nx = -vy / len;
-                    double ny = vx / len;
-                    double offset = 0.6; // ~60 km in lon/lat approx (rough), adjust as needed
-                    // two detour candidates on both sides of the polygon
-                    double[][] detours = new double[][]{
-                        { centroid.x + nx * offset, centroid.y + ny * offset },
-                        { centroid.x - nx * offset, centroid.y - ny * offset }
+                    double ny =  vx / len;
+                    // Compute offset based on the polygon's own geographic size so it scales correctly
+                    // regardless of whether the hazard zone is a tiny district or a large region.
+                    org.locationtech.jts.geom.Envelope polyEnv = avoidancePolygon.getEnvelopeInternal();
+                    double polyDiag = Math.sqrt(
+                        Math.pow(polyEnv.getWidth(), 2) + Math.pow(polyEnv.getHeight(), 2));
+                    // Try 4 progressively larger offsets: 1.2x, 2.0x, 3.5x, 5.0x polygon diagonal
+                    double[] offsetOptions = {
+                        polyDiag * 1.2 + 0.05,
+                        polyDiag * 2.0 + 0.10,
+                        polyDiag * 3.5 + 0.20,
+                        polyDiag * 5.0 + 0.30
                     };
                     double detourBestScore = bestScore;
                     JsonNode detourBestResponse = null;
-                    for (double[] d : detours) {
-                        StringBuilder ghParams2 = new StringBuilder();
-                        ghParams2.append("point=").append(startCoords[1]).append(",").append(startCoords[0]);
-                        ghParams2.append("&point=").append(d[1]).append(",").append(d[0]);
-                        ghParams2.append("&point=").append(endCoords[1]).append(",").append(endCoords[0]);
-                        ghParams2.append("&vehicle=car&calc_points=true&geometries=geojson&points_encoded=false");
-                        ghParams2.append("&alternatives=1&instructions=true");
-                        ghParams2.append("&details=road_class&details=surface&details=road_access&elevation=true");
-                        // DO NOT set ch.disable=true or block_area here so >200km detours route successfully via CH.
-                        String url2 = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams2.toString();
-                        try {
-                            ResponseEntity<JsonNode> detourResp = restTemplate.getForEntity(url2, JsonNode.class);
-                            JsonNode body = detourResp.getBody();
-                            if (body != null && body.has("paths") && body.get("paths").size() > 0) {
-                                JsonNode p0 = body.get("paths").get(0);
-                                JsonNode g0 = p0.get("points");
-                                if (g0 != null && g0.has("coordinates")) {
-                                    JsonNode coordsN0 = g0.get("coordinates");
-                                    Coordinate[] lcs0 = new Coordinate[coordsN0.size()];
-                                    for (int i = 0; i < coordsN0.size(); i++) {
-                                        JsonNode c0 = coordsN0.get(i);
-                                        lcs0[i] = new Coordinate(c0.get(0).asDouble(), c0.get(1).asDouble());
-                                    }
-                                    LineString ls0 = geometryFactory.createLineString(lcs0);
-                                    double score0 = 0.0;
-                                    if (avoidancePolygon != null && ls0.intersects(avoidancePolygon)) {
-                                        var inter0 = ls0.intersection(avoidancePolygon);
-                                        double interLen0 = 0.0;
-                                        if (inter0.getNumGeometries() > 1) {
-                                            LineMerger merger0 = new LineMerger();
-                                            merger0.add(inter0);
-                                            @SuppressWarnings("unchecked")
-                                            Collection<LineString> merged0 = (Collection<LineString>) merger0.getMergedLineStrings();
-                                            for (LineString il0 : merged0) interLen0 += il0.getLength();
-                                        } else if (inter0 instanceof LineString) {
-                                            interLen0 = ((LineString) inter0).getLength();
+                    outerDetour:
+                    for (double offset : offsetOptions) {
+                        double[][] detourCandidates = new double[][]{
+                            { centroid.x + nx * offset, centroid.y + ny * offset },
+                            { centroid.x - nx * offset, centroid.y - ny * offset }
+                        };
+                        for (double[] d : detourCandidates) {
+                            // Skip any waypoint that falls inside the hazard zone itself
+                            if (avoidancePolygon.contains(
+                                    geometryFactory.createPoint(new Coordinate(d[0], d[1])))) {
+                                System.out.println("Skipping detour waypoint inside polygon: ["
+                                    + d[0] + ", " + d[1] + "]");
+                                continue;
+                            }
+                            StringBuilder ghParams2 = new StringBuilder();
+                            ghParams2.append("point=").append(startCoords[1]).append(",").append(startCoords[0]);
+                            ghParams2.append("&point=").append(d[1]).append(",").append(d[0]);
+                            ghParams2.append("&point=").append(endCoords[1]).append(",").append(endCoords[0]);
+                            ghParams2.append("&vehicle=car&calc_points=true&geometries=geojson&points_encoded=false");
+                            ghParams2.append("&instructions=true");
+                            ghParams2.append("&details=road_class&details=surface&details=road_access&elevation=true");
+                            // No ch.disable=true so long-distance CH routing still works
+                            String url2 = "https://graphhopper.com/api/1/route?key=" + apiKey + "&" + ghParams2;
+                            System.out.println("Detour attempt offset=" + String.format("%.4f", offset)
+                                + " waypoint=[" + d[0] + "," + d[1] + "]");
+                            try {
+                                ResponseEntity<JsonNode> detourResp = restTemplate.getForEntity(url2, JsonNode.class);
+                                JsonNode detourBody = detourResp.getBody();
+                                if (detourBody != null && detourBody.has("paths")
+                                        && detourBody.get("paths").size() > 0) {
+                                    JsonNode p0 = detourBody.get("paths").get(0);
+                                    JsonNode g0 = p0.get("points");
+                                    if (g0 != null && g0.has("coordinates")) {
+                                        JsonNode coordsN0 = g0.get("coordinates");
+                                        Coordinate[] lcs0 = new Coordinate[coordsN0.size()];
+                                        for (int j = 0; j < coordsN0.size(); j++) {
+                                            JsonNode c0 = coordsN0.get(j);
+                                            lcs0[j] = new Coordinate(c0.get(0).asDouble(), c0.get(1).asDouble());
                                         }
-                                        score0 = interLen0 / Math.max(1e-9, ls0.getLength());
-                                    }
-                                    if (score0 < detourBestScore) {
-                                        detourBestScore = score0;
-                                        detourBestResponse = body;
+                                        LineString ls0 = geometryFactory.createLineString(lcs0);
+                                        double score0 = 0.0;
+                                        if (ls0.intersects(avoidancePolygon)) {
+                                            var inter0 = ls0.intersection(avoidancePolygon);
+                                            double interLen0 = 0.0;
+                                            if (inter0.getNumGeometries() > 1) {
+                                                LineMerger merger0 = new LineMerger();
+                                                merger0.add(inter0);
+                                                @SuppressWarnings("unchecked")
+                                                Collection<LineString> merged0 =
+                                                    (Collection<LineString>) merger0.getMergedLineStrings();
+                                                for (LineString il0 : merged0) interLen0 += il0.getLength();
+                                            } else if (inter0 instanceof LineString) {
+                                                interLen0 = ((LineString) inter0).getLength();
+                                            }
+                                            score0 = interLen0 / Math.max(1e-9, ls0.getLength());
+                                        }
+                                        System.out.println("Detour score=" + score0
+                                            + " (best so far=" + detourBestScore + ")");
+                                        if (score0 < detourBestScore) {
+                                            detourBestScore = score0;
+                                            detourBestResponse = detourBody;
+                                        }
+                                        // Perfect avoidance — stop immediately, no need for more API calls
+                                        if (score0 < 1e-9) {
+                                            System.out.println("Perfect avoidance achieved at offset=" + offset);
+                                            break outerDetour;
+                                        }
                                     }
                                 }
+                            } catch (Exception ex) {
+                                System.out.println("Detour attempt failed: " + ex.getMessage());
                             }
-                        } catch (Exception ex) {
-                            System.out.println("Detour attempt failed: " + ex.getMessage());
                         }
                     }
                     if (detourBestResponse != null) {
-                        ghResponse = detourBestResponse; // replace with detour response
-                        pathsNode = ghResponse.get("paths"); // reassign to new detour paths
-                        bestIdx = 0;
-                        bestScore = detourBestScore;
+                        ghResponse = detourBestResponse;
+                        pathsNode  = ghResponse.get("paths");
+                        bestIdx    = 0;
+                        bestScore  = detourBestScore;
                     }
                 }
 
