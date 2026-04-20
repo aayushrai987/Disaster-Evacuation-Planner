@@ -28,6 +28,18 @@ const MapInstanceCapture = ({ setMapInstance }) => {
   return null;
 };
 
+const ZoomControls = () => {
+  const map = useMap();
+  return (
+    <div className="leaflet-top leaflet-left" style={{ marginTop: '1rem', marginLeft: '1rem' }}>
+      <div className="leaflet-control leaflet-bar">
+        <a className="leaflet-control-zoom-in" href="#" title="Zoom in" onClick={(e) => { e.preventDefault(); map.zoomIn(); }}>+</a>
+        <a className="leaflet-control-zoom-out" href="#" title="Zoom out" onClick={(e) => { e.preventDefault(); map.zoomOut(); }}>-</a>
+      </div>
+    </div>
+  );
+};
+
 export default function MapComponent({
   startCoords,
   endCoords,
@@ -89,12 +101,7 @@ export default function MapComponent({
       
       <TileLayer url={osmUrl} attribution={attribution} />
 
-      <div className="leaflet-top leaflet-left" style={{ marginTop: '1rem', marginLeft: '1rem' }}>
-        <div className="leaflet-control leaflet-bar">
-          <a className="leaflet-control-zoom-in" href="#" title="Zoom in" onClick={(e) => { e.preventDefault(); L.DomUtil.get(e.target).closest('.leaflet-container')._leaflet_map?.zoomIn(); }}>+</a>
-          <a className="leaflet-control-zoom-out" href="#" title="Zoom out" onClick={(e) => { e.preventDefault(); L.DomUtil.get(e.target).closest('.leaflet-container')._leaflet_map?.zoomOut(); }}>-</a>
-        </div>
-      </div>
+      <ZoomControls />
 
       {startCoords && <Marker position={startCoords}><Popup>Start</Popup></Marker>}
       {endCoords && <Marker position={endCoords}><Popup>Destination</Popup></Marker>}
